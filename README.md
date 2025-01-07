@@ -28,8 +28,8 @@
 
 1. Копируйте программу на Orange Pi Zero 3:
    ```bash
-   git clone https://github.com/yourusername/your-repo.git
-   cd your-repo
+   git clone https://github.com/AleksandrVechtomov/OPi-yolo-gpio-stream.git
+   cd OPi-yolo-gpio-stream
    ```
 
 2. Установите необходимые зависимости (установка и запуск только из sudo, т.к. wiringpi работает только из sudo):
