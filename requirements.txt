@@ -1,0 +1,10 @@
+numpy==1.26.3
+opencv-python==4.10.0.84
+supervision==0.24.0
+Flask==3.0.3
+ultralytics==8.3.13
+ultralytics-thop==2.0.9
+ncnn==1.0.20241226
+torch==1.13.1
+torchvision==0.14.1
+wiringpi==2.60.1
