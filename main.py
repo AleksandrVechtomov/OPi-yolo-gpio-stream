@@ -7,7 +7,7 @@ from wiringpi import GPIO
 import sys
 import time
 from collections import deque
-
+import threading
 
 # Источник ввода видео
 input_camera = 1
@@ -21,8 +21,6 @@ GPIO_PIN = 2  # Номер GPIO пина
 wiringpi.pinMode(GPIO_PIN, GPIO.OUTPUT)  # Установка режима вывода для пина
 
 # Модель НС
-# Экспорт из PT в NCNN формат командой: yolo export model=yolo11n.pt format=ncnn imgsz=160
-# Аргументы команды по ссылке: https://docs.ultralytics.com/modes/export/#arguments
 ncnn_model = YOLO('yolo11n_ncnn_model/', task='detect')
 
 # Экземпляры классов трекера и аннотаторов
@@ -37,19 +35,24 @@ if not cap.isOpened():
     print("Ошибка: Не удается открыть камеру.")
     sys.exit(1)
 
-# Устанавливаем разрешение 720x540
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 720)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
+# Устанавливаем разрешение 640x480
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-def generate_frames():
+# Глобальная переменная для хранения последнего кадра
+latest_frame = None
+frame_lock = threading.Lock()
+
+def process_video_stream():
+    global latest_frame
     prev_time = time.time()  # Время предыдущего кадра
-    fps_values = deque(maxlen=10)  # Очередь для хранения последних 10 значений FPS
+    fps_values = deque(maxlen=30)  # Очередь для хранения последних 10 значений FPS
 
     while True:
         success, frame = cap.read()  # Читаем кадр из видеопотока
         if not success:
             break
-
+            
         frame = cv2.flip(frame, flipCode=1)
 
         results = ncnn_model(frame, verbose=False, imgsz=160, conf=0.4, agnostic_nms=True)[0]
@@ -72,12 +75,25 @@ def generate_frames():
         # Добавляем FPS в очередь и вычисляем среднее
         fps_values.append(fps)
         avg_fps = sum(fps_values) / len(fps_values)
+        avg_fps_rounded = int(round(avg_fps))
+        print(avg_fps_rounded)
 
         # Отображение FPS на изображении
         cv2.putText(
-            frame, f"FPS: {avg_fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, 
+            frame, f"FPS: {avg_fps_rounded}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, 
             (0, 255, 0), 2, cv2.LINE_AA)
         
+        # Обновляем последний кадр
+        with frame_lock:
+            latest_frame = frame
+
+def generate_frames():
+    while True:
+        with frame_lock:
+            if latest_frame is None:
+                continue
+            frame = latest_frame.copy()
+
         # Кодируем кадр в JPEG
         ret, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
@@ -194,9 +210,14 @@ def gpio_state():
     current_state = wiringpi.digitalRead(GPIO_PIN)  # Текущее состояние GPIO
     return {'state': 'HIGH' if current_state == GPIO.HIGH else 'LOW'}  # Возвращаем новое состояние
 
-
 if __name__ == '__main__':
     try:
+        # Запускаем обработку видеопотока в отдельном потоке
+        video_thread = threading.Thread(target=process_video_stream)
+        video_thread.daemon = True
+        video_thread.start()
+
+        # Запускаем Flask-приложение
         app.run(host='0.0.0.0', port=5000)  # Запускаем веб-сервер
     except KeyboardInterrupt:
         print("Сервер остановлен пользователем!")
